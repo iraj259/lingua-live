@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sora: 'Sora', system-ui, sans-serif;
+  --font-jetbrains: 'JetBrains Mono', monospace;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-font-smoothing: antialiased; }
+
+body { min-height: 100dvh; }
+
+:focus-visible { outline: 2px solid #1A56DB; outline-offset: 2px; border-radius: 4px; }
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #E4E0D8; border-radius: 3px; }
+
+@layer components {
+  .card { @apply bg-white rounded-2xl border border-border shadow-sm; }
+
+  .input {
+    @apply w-full px-4 py-3 bg-white border border-border rounded-xl text-sm
+           text-ink placeholder:text-muted outline-none transition-all
+           focus:border-accent focus:ring-2 focus:ring-accent/10;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+           bg-ink text-white text-sm font-medium rounded-xl
+           transition-opacity hover:opacity-90
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+           bg-white text-ink text-sm font-medium rounded-xl border border-border
+           transition-colors hover:bg-cream
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-accent {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+           bg-accent text-white text-sm font-medium rounded-xl
+           transition-opacity hover:opacity-90
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2
+           text-muted text-sm font-medium rounded-lg
+           transition-colors hover:bg-cream hover:text-ink
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
+  .section-label { @apply text-xs font-semibold uppercase tracking-widest text-muted; }
+}
+
+@layer utilities {
+  .animate-fade-in  { animation: fadeIn  0.35s ease forwards; }
+  .animate-slide-up { animation: slideUp 0.35s ease forwards; }
+}
+
+@keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulseDot {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.4; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+
+.typing-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor;
+  animation: pulseDot 1.4s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
