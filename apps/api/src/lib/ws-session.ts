@@ -1,29 +1,24 @@
 /**
  * WSSession — manages one active WebSocket conversation.
  *
- * Created by the WebSocket upgrade handler and stored in a Map
- * keyed by sessionId. Destroyed when the session ends or the
- * connection closes.
- *
- * Responsibilities:
- * - Handle start_session: generate scenario, send session_ready
- * - Handle send_message: stream AI response token by token
- * - Handle end_session: mark session complete in DB
- * - Handle ping: respond with pong
- * - Clean up on disconnect
+ * Phase 4 additions:
+ * - userId injected at construction for memory access
+ * - Memory loaded per-message and injected into system prompt
+ * - Feedback generated in background on session end
  */
 
-import { and, eq, asc, gte } from "drizzle-orm";
+import { eq, asc } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { sessions, messages } from "../db/schema.js";
+import { sessions, messages, feedbackReports } from "../db/schema.js";
 import { generateResponse, MODELS } from "./groq.js";
-import { ScenarioAgent } from "../agents/scenario.agent.js";
-import { logger } from "./logger.js";
-import { type ScenarioContext, type ServerMessage } from "./ws-types.js";
+import { transcribeAudio }  from "./stt.js";
+import { ScenarioAgent }    from "../agents/scenario.agent.js";
+import { FeedbackAgent }    from "../agents/feedback.agent.js";
+import { memoryService }    from "../services/memory.service.js";
+import { logger }           from "./logger.js";
+import type { ScenarioContext, ServerMessage } from "./ws-types.js";
 
 // ── Groq streaming ─────────────────────────────────────────────────────────
-// This is a separate streaming fetch — Phase 2 adds this alongside the
-// existing generateResponse function. We don't replace it.
 async function* streamGroqResponse(
   messages_: Array<{ role: "system" | "user" | "assistant"; content: string }>,
   model = MODELS.MAIN
@@ -32,7 +27,7 @@ async function* streamGroqResponse(
   if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
+    method:  "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization:  `Bearer ${GROQ_API_KEY}`,
@@ -40,9 +35,9 @@ async function* streamGroqResponse(
     body: JSON.stringify({
       model,
       messages: messages_,
-      temperature:  0.75,
-      max_tokens:   500,
-      stream:       true,   // ← the key difference from Phase 1
+      temperature: 0.75,
+      max_tokens:  500,
+      stream:      true,
     }),
   });
 
@@ -51,8 +46,6 @@ async function* streamGroqResponse(
     throw new Error(`Groq stream error ${res.status}: ${err}`);
   }
 
-  // Parse the SSE stream
-  // Groq sends: "data: {...}\n\n" lines, ending with "data: [DONE]\n\n"
   const reader  = res.body.getReader();
   const decoder = new TextDecoder();
   let   buffer  = "";
@@ -62,52 +55,54 @@ async function* streamGroqResponse(
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-
-    // Process all complete lines in the buffer
     const lines = buffer.split("\n");
-    // Keep the last (possibly incomplete) line in the buffer
     buffer = lines.pop() ?? "";
 
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed || !trimmed.startsWith("data: ")) continue;
-
       const data = trimmed.slice(6);
       if (data === "[DONE]") return;
 
       try {
         const parsed = JSON.parse(data) as {
-          choices: Array<{ delta: { content?: string }; finish_reason: string | null }>;
+          choices: Array<{
+            delta:         { content?: string };
+            finish_reason: string | null;
+          }>;
         };
         const token = parsed.choices[0]?.delta.content;
         if (token) yield token;
       } catch {
-        // Malformed SSE line — skip silently
+        // skip malformed line
       }
     }
   }
 }
 
-// ── WSSession class ────────────────────────────────────────────────────────
+// ── WSSession ──────────────────────────────────────────────────────────────
 export class WSSession {
-  private scenarioAgent    = new ScenarioAgent();
-  private scenario:          ScenarioContext | null = null;
-  private sessionDbId:       string | null = null;
-  private sessionStartedAt:  Date | null = null;  // marks the start of THIS connection
-  private language:          string = "spanish";
-  private level:             string = "beginner";
-  private isEnded:           boolean = false;
+  private scenarioAgent = new ScenarioAgent();
+  private feedbackAgent = new FeedbackAgent();
 
-  constructor(private readonly sendRaw: (msg: ServerMessage) => void) {}
+  private scenario:    ScenarioContext | null = null;
+  private sessionDbId: string | null = null;
+  private language:    string = "spanish";
+  private level:       string = "beginner";
+  private isEnded:     boolean = false;
 
-  // ── Public message handler ───────────────────────────────────────────────
-  // Called by the WebSocket server for every incoming message from this client
+  constructor(
+    private readonly sendRaw: (msg: ServerMessage) => void,
+    private readonly userId: string
+  ) {}
+
+  // ── handleMessage ──────────────────────────────────────────────────────
   async handleMessage(data: string): Promise<void> {
     let parsed: unknown;
     try {
       parsed = JSON.parse(data);
     } catch {
-      this.sendError("PARSE_ERROR", "Invalid message format — must be JSON");
+      this.sendError("PARSE_ERROR", "Invalid message format");
       return;
     }
 
@@ -116,14 +111,20 @@ export class WSSession {
     switch (msg.type) {
       case "start_session":
         await this.handleStartSession(
-          msg.sessionId    as string,
-          msg.language     as string,
-          msg.level        as string,
+          msg.sessionId       as string,
+          msg.language        as string,
+          msg.level           as string,
           msg.scenarioRequest as string
         );
         break;
       case "send_message":
         await this.handleSendMessage(msg.content as string);
+        break;
+      case "send_audio":
+        await this.handleSendAudio(
+          msg.audio    as string,
+          msg.mimeType as string
+        );
         break;
       case "end_session":
         await this.handleEndSession();
@@ -132,15 +133,15 @@ export class WSSession {
         this.sendRaw({ type: "pong" });
         break;
       default:
-        this.sendError("UNKNOWN_MESSAGE", `Unknown message type: ${String(msg.type)}`);
+        this.sendError("UNKNOWN_MESSAGE", `Unknown type: ${String(msg.type)}`);
     }
   }
 
-  // ── start_session ────────────────────────────────────────────────────────
+  // ── handleStartSession ─────────────────────────────────────────────────
   private async handleStartSession(
-    sessionId: string,
-    language: string,
-    level: string,
+    sessionId:       string,
+    language:        string,
+    level:           string,
     scenarioRequest: string
   ): Promise<void> {
     if (this.sessionDbId) {
@@ -148,51 +149,62 @@ export class WSSession {
       return;
     }
 
-    // Verify session exists in DB
-    const [session] = await db.select().from(sessions)
-      .where(eq(sessions.id, sessionId)).limit(1);
+    const [session] = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .limit(1);
 
     if (!session) {
       this.sendError("SESSION_NOT_FOUND", "Session not found");
       return;
     }
 
-    this.sessionDbId      = sessionId;
-    this.language         = language;
-    this.level            = level;
-    this.sessionStartedAt = new Date();
+    this.sessionDbId = sessionId;
+    this.language    = language;
+    this.level       = level;
 
     logger.info("WS session starting", { sessionId, language, level });
 
-    // Generate the scenario persona
-    const scenario = await this.scenarioAgent.generate(scenarioRequest, language, level);
-    this.scenario  = scenario;
+    const scenario = await this.scenarioAgent.generate(
+      scenarioRequest,
+      language,
+      level
+    );
+    this.scenario = scenario;
 
-    // Save scenario context (non-fatal — session works even if column is missing)
     await db.update(sessions)
       .set({ scenarioContext: scenario as any })
       .where(eq(sessions.id, sessionId))
-      .catch((err: unknown) => logger.warn("Failed to save scenario_context — run db:push", { err }));
+      .catch((err: unknown) =>
+        logger.warn("Failed to save scenario_context", { err })
+      );
 
-    // Tell the client the session is ready — triggers persona display in UI
     this.sendRaw({ type: "session_ready", scenario });
 
-    // Send the opening message — but don't save if the session already has messages
-    // (reconnect case: avoid stacking duplicate greetings in DB and context)
-    const existing = await db.select({ id: messages.id })
-      .from(messages).where(eq(messages.sessionId, sessionId)).limit(1);
+    // Don't re-save the opening message on reconnect
+    const existing = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.sessionId, sessionId))
+      .limit(1);
 
     if (existing.length === 0) {
       await this.saveAndSendAiMessage(scenario.openingMessage);
     } else {
       this.sendRaw({
-        type:    "message_done",
-        message: { id: `opening-${Date.now()}`, role: "assistant", content: scenario.openingMessage, createdAt: new Date().toISOString() },
+        type: "message_done",
+        message: {
+          id:        `opening-${Date.now()}`,
+          role:      "assistant",
+          content:   scenario.openingMessage,
+          createdAt: new Date().toISOString(),
+        },
       });
     }
   }
 
-  // ── send_message ─────────────────────────────────────────────────────────
+  // ── handleSendMessage ──────────────────────────────────────────────────
   private async handleSendMessage(content: string): Promise<void> {
     if (!this.sessionDbId || !this.scenario) {
       this.sendError("NOT_STARTED", "Session not started");
@@ -209,14 +221,12 @@ export class WSSession {
 
     const text = content.trim();
 
-    // 1. Save user message to DB
     const [savedUserMsg] = await db.insert(messages)
       .values({ sessionId: this.sessionDbId, role: "user", content: text })
       .returning();
 
     if (!savedUserMsg) throw new Error("Failed to save user message");
 
-    // 2. Tell client the user message was saved (gives it the DB id)
     this.sendRaw({
       type:    "user_message_saved",
       message: {
@@ -227,33 +237,35 @@ export class WSSession {
       },
     });
 
-    // 3. Load only messages from this connection's start — prevents old
-    //    personas from leaking into the context when a session is reused.
-    const historyWhere = this.sessionStartedAt
-      ? and(eq(messages.sessionId, this.sessionDbId), gte(messages.createdAt, this.sessionStartedAt))
-      : eq(messages.sessionId, this.sessionDbId);
-
-    const history = await db.select({ role: messages.role, content: messages.content })
+    const history = await db
+      .select({ role: messages.role, content: messages.content })
       .from(messages)
-      .where(historyWhere)
+      .where(eq(messages.sessionId, this.sessionDbId))
       .orderBy(asc(messages.createdAt))
       .limit(20);
 
-    // 4. Build message array for Groq
+    // ── Inject memory into system prompt ──────────────────────────────
+    let systemPrompt = this.scenario.systemPrompt;
+
+    const memory        = await memoryService.load(this.userId, this.language);
+    const topWeaknesses = memoryService.getTopWeaknesses(memory);
+
+    if (topWeaknesses.length > 0) {
+      systemPrompt += `\n\nLearning context: This student has struggled with ${topWeaknesses.join(", ")} in previous sessions. Pay special attention to these areas and gently correct them when they appear.`;
+    }
+
     const groqMessages = [
-      { role: "system" as const, content: this.scenario.systemPrompt },
+      { role: "system" as const, content: systemPrompt },
       ...history.map(m => ({
-        role: m.role as "user" | "assistant",
+        role:    m.role as "user" | "assistant",
         content: m.content,
       })),
     ];
 
-    // 5. Stream the AI response token by token
     let fullResponse = "";
     try {
       for await (const token of streamGroqResponse(groqMessages)) {
         fullResponse += token;
-        // Send each token to the client immediately
         this.sendRaw({ type: "token", token });
       }
     } catch (err) {
@@ -267,30 +279,74 @@ export class WSSession {
       return;
     }
 
-    // 6. Save the complete AI response to DB
     await this.saveAndSendAiMessage(fullResponse);
 
-    // 7. Auto-set session title from first user message
-    const [currentSession] = await db.select({ title: sessions.title })
-      .from(sessions).where(eq(sessions.id, this.sessionDbId)).limit(1);
+    // Auto-set session title from first user message
+    const [currentSession] = await db
+      .select({ title: sessions.title })
+      .from(sessions)
+      .where(eq(sessions.id, this.sessionDbId))
+      .limit(1);
 
     if (!currentSession?.title) {
       const title = text.length > 60 ? text.slice(0, 57) + "..." : text;
-      await db.update(sessions).set({ title }).where(eq(sessions.id, this.sessionDbId));
+      await db.update(sessions)
+        .set({ title })
+        .where(eq(sessions.id, this.sessionDbId));
     }
   }
 
-  // ── end_session ──────────────────────────────────────────────────────────
+  // ── handleSendAudio ────────────────────────────────────────────────────
+  private async handleSendAudio(
+    audioBase64: string,
+    mimeType:    string
+  ): Promise<void> {
+    if (!this.sessionDbId || !this.scenario) {
+      this.sendError("NOT_STARTED", "Session not started");
+      return;
+    }
+    if (this.isEnded) {
+      this.sendError("SESSION_ENDED", "Session has already ended");
+      return;
+    }
+
+    try {
+      const transcript = await transcribeAudio(
+        audioBase64,
+        mimeType,
+        this.language
+      );
+
+      if (!transcript) {
+        this.sendError("EMPTY_TRANSCRIPT", "Could not hear anything. Please try again.");
+        return;
+      }
+
+      this.sendRaw({ type: "stt_result", transcript });
+      await this.handleSendMessage(transcript);
+
+    } catch (err) {
+      logger.error("STT error", err);
+      this.sendError("STT_ERROR", "Could not transcribe audio. Please try again.");
+    }
+  }
+
+  // ── handleEndSession ───────────────────────────────────────────────────
   private async handleEndSession(): Promise<void> {
     if (!this.sessionDbId || this.isEnded) return;
     this.isEnded = true;
 
-    const [session] = await db.select({ startedAt: sessions.startedAt })
-      .from(sessions).where(eq(sessions.id, this.sessionDbId)).limit(1);
+    const [session] = await db
+      .select({ startedAt: sessions.startedAt })
+      .from(sessions)
+      .where(eq(sessions.id, this.sessionDbId))
+      .limit(1);
 
     const endedAt = new Date();
     const durationSeconds = session
-      ? Math.floor((endedAt.getTime() - new Date(session.startedAt).getTime()) / 1000)
+      ? Math.floor(
+          (endedAt.getTime() - new Date(session.startedAt).getTime()) / 1000
+        )
       : 0;
 
     await db.update(sessions)
@@ -298,20 +354,64 @@ export class WSSession {
       .where(eq(sessions.id, this.sessionDbId));
 
     logger.info("WS session ended", { sessionId: this.sessionDbId, durationSeconds });
+
+    // Generate feedback in background — don't block session_ended response
+    this.generateFeedback().catch(err => {
+      logger.error("Feedback generation failed", err);
+    });
+
     this.sendRaw({ type: "session_ended" });
   }
 
-  // ── Called when the WebSocket connection closes (tab close, network drop) ─
+  // ── generateFeedback ───────────────────────────────────────────────────
+  private async generateFeedback(): Promise<void> {
+    if (!this.sessionDbId) return;
+
+    const transcript = await db
+      .select({ role: messages.role, content: messages.content })
+      .from(messages)
+      .where(eq(messages.sessionId, this.sessionDbId))
+      .orderBy(asc(messages.createdAt));
+
+    if (transcript.length === 0) return;
+
+    const feedback = await this.feedbackAgent.analyze(
+      transcript,
+      this.language,
+      this.level
+    );
+
+    await db.insert(feedbackReports).values({
+      sessionId:    this.sessionDbId,
+      grammarScore: feedback.grammarScore,
+      fluencyScore: feedback.fluencyScore,
+      vocabScore:   feedback.vocabScore,
+      corrections:  feedback.corrections,
+      suggestions:  feedback.suggestions,
+      strengths:    feedback.strengths,
+      weaknessTags: feedback.weaknessTags,
+    });
+
+    await memoryService.save(this.userId, this.language, feedback);
+
+    logger.info("Feedback generated", {
+      sessionId:    this.sessionDbId,
+      grammarScore: feedback.grammarScore,
+      fluencyScore: feedback.fluencyScore,
+      vocabScore:   feedback.vocabScore,
+    });
+  }
+
+  // ── onDisconnect ───────────────────────────────────────────────────────
   async onDisconnect(): Promise<void> {
     if (!this.sessionDbId || this.isEnded) return;
-    // Mark as abandoned if the user disconnects without ending properly
     await db.update(sessions)
       .set({ status: "abandoned", endedAt: new Date() })
       .where(eq(sessions.id, this.sessionDbId));
     logger.info("WS session abandoned on disconnect", { sessionId: this.sessionDbId });
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────
   private async saveAndSendAiMessage(content: string): Promise<void> {
     if (!this.sessionDbId) return;
 
@@ -321,7 +421,6 @@ export class WSSession {
 
     if (!saved) return;
 
-    // message_done tells the client the stream is complete and the message is saved
     this.sendRaw({
       type:    "message_done",
       message: {

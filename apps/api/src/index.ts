@@ -5,6 +5,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { authRouter }     from "./routes/auth.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { chatRouter }     from "./routes/chat.js";
+import { feedbackRouter } from "./routes/feedback.js";
 import { AppError }       from "./lib/errors.js";
 import { logger }         from "./lib/logger.js";
 import { WSSession } from "./lib/ws-session.js";
@@ -36,6 +37,7 @@ app.use("*", honoLogger());
 app.route("/auth",     authRouter);
 app.route("/sessions", sessionsRouter);
 app.route("/chat",     chatRouter);
+app.route("/feedback", feedbackRouter);
 
 // Health check — Railway pings this to verify the service is alive
 app.get("/health", (c) =>
@@ -78,10 +80,10 @@ Bun.serve<WSData>({
 
   websocket: {
     open(ws) {
-      const { connectionId } = ws.data;
+      const { connectionId, userId } = ws.data;
       const wsSession = new WSSession((msg) => {
         ws.send(JSON.stringify(msg));
-      });
+      }, userId);
       activeWS.set(connectionId, { wsSession });
       logger.info("WebSocket opened", { connectionId });
     },

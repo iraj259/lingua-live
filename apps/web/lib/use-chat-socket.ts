@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { Language, Level } from "@/lib/api";
 
-// ── Types ──────────────────────────────────────────────────────────────────
 export interface ScenarioContext {
   personaName:    string;
   personaRole:    string;
@@ -19,7 +18,22 @@ export interface ChatMessage {
   createdAt: string;
 }
 
-type ConnectionState = "connecting" | "ready" | "ended" | "error" | "reconnecting";
+type ConnectionState =
+  | "connecting"
+  | "ready"
+  | "ended"
+  | "error"
+  | "reconnecting";
+
+interface UseChatSocketOptions {
+  sessionId:       string;
+  language:        Language;
+  level:           Level;
+  scenarioRequest: string;
+  // Called when STT result arrives — lets the session page
+  // show what was heard in the transcript
+  onSTTResult?: (transcript: string) => void;
+}
 
 interface UseChatSocketReturn {
   connectionState:  ConnectionState;
@@ -28,35 +42,37 @@ interface UseChatSocketReturn {
   streamingContent: string;
   error:            string | null;
   sendMessage:      (content: string) => void;
+  sendAudio:        (audioBase64: string, mimeType: string) => void;
   endSession:       () => void;
 }
 
 const WS_BASE = (process.env["NEXT_PUBLIC_API_URL"] ?? "http://localhost:3001")
   .replace(/^http/, "ws");
 
-export function useChatSocket(
-  sessionId: string,
-  language: Language,
-  level: Level,
-  scenarioRequest: string
-): UseChatSocketReturn {
-  const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
-  const [scenario, setScenario]               = useState<ScenarioContext | null>(null);
-  const [messages, setMessages]               = useState<ChatMessage[]>([]);
-  const [streamingContent, setStreamingContent] = useState("");
-  const [error, setError]                     = useState<string | null>(null);
+export function useChatSocket({
+  sessionId,
+  language,
+  level,
+  scenarioRequest,
+  onSTTResult,
+}: UseChatSocketOptions): UseChatSocketReturn {
+  const [connectionState,  setConnectionState]  = useState<ConnectionState>("connecting");
+  const [scenario,         setScenario]          = useState<ScenarioContext | null>(null);
+  const [messages,         setMessages]          = useState<ChatMessage[]>([]);
+  const [streamingContent, setStreamingContent]  = useState("");
+  const [error,            setError]             = useState<string | null>(null);
 
-  const wsRef               = useRef<WebSocket | null>(null);
-  const reconnectAttempts   = useRef(0);
-  const maxReconnects       = 5;
-  // Tracks closes that we initiated (cleanup / intentional end).
-  // When true, onclose does nothing — prevents state from being
-  // clobbered after React StrictMode double-invokes the effect.
-  const closedIntentionally = useRef(false);
+  const wsRef             = useRef<WebSocket | null>(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnects     = 5;
+  const isEndedRef        = useRef(false);
+  // Keep onSTTResult in a ref so it never invalidates the connect callback
+  const onSTTResultRef    = useRef(onSTTResult);
+  useEffect(() => { onSTTResultRef.current = onSTTResult; }, [onSTTResult]);
 
-  // ── connect ──────────────────────────────────────────────────────────────
   const connect = useCallback(() => {
-    closedIntentionally.current = false; // reset at the start of every attempt
+    // Reset ended flag so this fresh connection can reconnect if it drops
+    isEndedRef.current = false;
 
     const token = localStorage.getItem("token");
     if (!token) {
@@ -71,9 +87,11 @@ export function useChatSocket(
 
     ws.onopen = () => {
       reconnectAttempts.current = 0;
-      setConnectionState("connecting"); // stays "connecting" until session_ready
-      // Always send start_session on every new connection — this covers both
-      // the first connect and reconnects after a drop.
+      setConnectionState("connecting");
+      // Always send start_session — the server handles reconnects gracefully
+      // (won't re-save the opening message if messages already exist).
+      // This also fixes React Strict Mode's double-effect in development,
+      // where the cleanup fires between the two effect invocations.
       ws.send(JSON.stringify({
         type: "start_session",
         sessionId,
@@ -97,57 +115,53 @@ export function useChatSocket(
           setConnectionState("ready");
           break;
         }
-
         case "user_message_saved": {
-          // Replace the last pending optimistic message with the server-confirmed one
           const m = msg.message as ChatMessage;
-          setMessages(prev => {
-            const pendingIdx = prev.reduceRight(
-              (found, x, i) => found === -1 && x.id.startsWith("pending-") ? i : found,
-              -1
-            );
-            if (pendingIdx === -1) return [...prev, m];
-            return [...prev.slice(0, pendingIdx), m, ...prev.slice(pendingIdx + 1)];
-          });
+          setMessages(prev => [...prev, m]);
           break;
         }
-
         case "token": {
           setStreamingContent(prev => prev + (msg.token as string));
           break;
         }
-
         case "message_done": {
           const m = msg.message as ChatMessage;
           setMessages(prev => [...prev, m]);
           setStreamingContent("");
           break;
         }
-
+        case "stt_result": {
+          onSTTResultRef.current?.(msg.transcript as string);
+          break;
+        }
         case "session_ended": {
+          isEndedRef.current = true;
           setConnectionState("ended");
           ws.close();
           break;
         }
-
         case "error": {
           setError((msg.message as string) ?? "An error occurred");
           break;
         }
-
-        case "pong":
+        case "pong": {
           break;
+        }
       }
     };
 
     ws.onclose = () => {
-      wsRef.current = null;
-
-      // Intentional close (cleanup / session end) — leave state as-is.
-      if (closedIntentionally.current) return;
+      // Only clear the ref if this is still the active connection.
+      // In React Strict Mode, the old WS can fire onclose after a new one
+      // has already been stored in wsRef — don't wipe the newer connection.
+      if (wsRef.current === ws) wsRef.current = null;
+      if (isEndedRef.current) return;
 
       if (reconnectAttempts.current < maxReconnects) {
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30_000);
+        const delay = Math.min(
+          1000 * Math.pow(2, reconnectAttempts.current),
+          30_000
+        );
         reconnectAttempts.current++;
         setConnectionState("reconnecting");
         setError(`Connection lost. Reconnecting in ${Math.round(delay / 1000)}s…`);
@@ -157,26 +171,26 @@ export function useChatSocket(
         }, delay);
       } else {
         setConnectionState("error");
-        setError("Connection lost. Please refresh the page to continue.");
+        setError("Connection lost. Please refresh the page.");
       }
     };
 
     ws.onerror = () => {
       setError("WebSocket error occurred");
     };
+
   }, [sessionId, language, level, scenarioRequest]);
 
-  // ── mount / unmount ───────────────────────────────────────────────────────
   useEffect(() => {
     connect();
     return () => {
-      // Mark as intentional so onclose doesn't set error state or reconnect
-      closedIntentionally.current = true;
+      isEndedRef.current = true;
+      reconnectAttempts.current = maxReconnects + 1;
       wsRef.current?.close();
     };
   }, [connect]);
 
-  // ── Heartbeat ─────────────────────────────────────────────────────────────
+  // Heartbeat
   useEffect(() => {
     const interval = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -186,28 +200,33 @@ export function useChatSocket(
     return () => clearInterval(interval);
   }, []);
 
-  // ── sendMessage ───────────────────────────────────────────────────────────
   const sendMessage = useCallback((content: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
-      setError("Not connected. Please wait…");
+      setError("Not connected. Please wait.");
       return;
     }
-    if (connectionState !== "ready") {
-      setError("Session not ready yet. Please wait.");
-      return;
-    }
-    const trimmed = content.trim();
-    if (!trimmed) return;
-
-    // Optimistic: show immediately, swapped for server-confirmed on user_message_saved
-    setMessages(prev => [
-      ...prev,
-      { id: `pending-${Date.now()}`, role: "user" as const, content: trimmed, createdAt: new Date().toISOString() },
-    ]);
-    wsRef.current.send(JSON.stringify({ type: "send_message", content: trimmed }));
+    if (connectionState !== "ready") return;
+    if (!content.trim()) return;
+    wsRef.current.send(JSON.stringify({
+      type: "send_message",
+      content: content.trim(),
+    }));
   }, [connectionState]);
 
-  // ── endSession ────────────────────────────────────────────────────────────
+  // ── NEW: send audio to backend for STT ──────────────────────────────
+  const sendAudio = useCallback((audioBase64: string, mimeType: string) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      setError("Not connected. Please wait.");
+      return;
+    }
+    if (connectionState !== "ready") return;
+    wsRef.current.send(JSON.stringify({
+      type:  "send_audio",
+      audio: audioBase64,
+      mimeType,
+    }));
+  }, [connectionState]);
+
   const endSession = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "end_session" }));
@@ -221,6 +240,7 @@ export function useChatSocket(
     streamingContent,
     error,
     sendMessage,
+    sendAudio,
     endSession,
   };
 }

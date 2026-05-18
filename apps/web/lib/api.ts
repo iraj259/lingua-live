@@ -75,3 +75,28 @@ export const chatApi = {
   send: (sessionId: string, message: string) =>
     request<{ userMessage: Message; aiMessage: Message }>("/chat", { method: "POST", body: { sessionId, message } }),
 };
+
+export interface Correction {
+  original:    string;
+  corrected:   string;
+  explanation: string;
+  type:        "grammar" | "vocabulary" | "syntax" | "spelling";
+}
+
+export interface FeedbackReport {
+  id:           string;
+  sessionId:    string;
+  grammarScore: number;
+  fluencyScore: number;
+  vocabScore:   number;
+  corrections:  Correction[];
+  suggestions:  string[];
+  strengths:    string[];
+  weaknessTags: string[];
+  createdAt:    string;
+}
+
+export const feedbackApi = {
+  get: (sessionId: string) =>
+    request<{ pending: boolean; report?: FeedbackReport }>(`/feedback/${sessionId}`),
+};
