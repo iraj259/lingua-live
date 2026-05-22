@@ -19,11 +19,14 @@ app.use("*", secureHeaders());
 
 app.use("*", cors({
   origin: (origin) => {
+    if (!origin) return "*";
     const allowed = [
       process.env["FRONTEND_URL"] ?? "http://localhost:3000",
       "http://localhost:3000",
     ];
-    if (!origin || allowed.includes(origin)) return origin ?? "*";
+    if (allowed.includes(origin)) return origin;
+    // Allow all Vercel preview deployments
+    if (origin.endsWith(".vercel.app")) return origin;
     return null;
   },
   allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
