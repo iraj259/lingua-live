@@ -100,6 +100,7 @@ export const userMemory = pgTable("user_memory", {
   },
 }));
 
+
 // ── relations (enables Drizzle join queries) ───────────────────────────────
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
@@ -127,6 +128,7 @@ export const userMemoryRelations = relations(userMemory, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
 
 // ── inferred types — use these everywhere instead of raw row types ─────────
 export type User       = typeof users.$inferSelect;

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>lingua live</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;500;600;700&family=Sora:wght@200;300;400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<style>
+  :root {
+    --bg-0: #050208;
+    --bg-1: #0c0420;
+    --bg-2: #1a0a3a;
+    --violet: #7c3aed;
+    --violet-2: #a855f7;
+    --magenta: #d946ef;
+    --pink: #f472b6;
+    --ink: #ede4ff;
+    --ink-dim: #b5a8d4;
+    --ink-mute: #6e6585;
+    --glass-stroke: rgba(255,255,255,0.18);
+    --glass-fill: rgba(255,255,255,0.04);
+  }
+
+  html, body { background: var(--bg-0); color: var(--ink); margin:0; min-height: 100dvh; }
+  body { font-family: 'Sora', system-ui, sans-serif; font-weight: 300; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+
+  .font-display { font-family: 'Unbounded', system-ui, sans-serif; font-feature-settings: 'ss01'; }
+  .font-serif-i { font-family: 'Instrument Serif', serif; font-style: italic; }
+  .font-mono    { font-family: 'JetBrains Mono', monospace; }
+
+  /* Cosmic backdrop layers */
+  .grain {
+    position: absolute; inset: 0; pointer-events: none; opacity: .35; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+
+  /* Aurora floaters */
+  .aurora { position: absolute; border-radius: 50%; filter: blur(80px); opacity: .55; mix-blend-mode: screen; will-change: transform; }
+  @keyframes drift-a { 0%{transform:translate3d(-10%,-5%,0) scale(1)} 50%{transform:translate3d(8%,4%,0) scale(1.12)} 100%{transform:translate3d(-10%,-5%,0) scale(1)} }
+  @keyframes drift-b { 0%{transform:translate3d(8%,-3%,0) scale(1.05)} 50%{transform:translate3d(-6%,6%,0) scale(.95)} 100%{transform:translate3d(8%,-3%,0) scale(1.05)} }
+  @keyframes drift-c { 0%{transform:translate3d(0%,8%,0) scale(.9)} 50%{transform:translate3d(4%,-4%,0) scale(1.1)} 100%{transform:translate3d(0%,8%,0) scale(.9)} }
+
+  /* Glass card */
+  .glass {
+    background: linear-gradient(160deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02) 40%, rgba(124,58,237,0.05));
+    border: 1px solid var(--glass-stroke);
+    backdrop-filter: blur(22px) saturate(140%);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.12) inset, 0 30px 80px -20px rgba(124,58,237,.25), 0 1px 60px -10px rgba(168,85,247,.15);
+  }
+  .glass-input {
+    width:100%; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 14px; padding: 14px 16px; color: var(--ink); font: inherit; font-size: 15px;
+    outline: none; transition: border-color .25s, box-shadow .25s, background .25s;
+  }
+  .glass-input::placeholder { color: rgba(181,168,212,0.55); }
+  .glass-input:focus { border-color: rgba(168,85,247,0.6); box-shadow: 0 0 0 4px rgba(168,85,247,0.12); background: rgba(255,255,255,0.04); }
+
+  .btn-violet {
+    background: linear-gradient(180deg, var(--violet-2), var(--violet));
+    color: #fff; border-radius: 14px; padding: 14px 22px;
+    font-weight: 500; letter-spacing: .01em;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.4) inset, 0 12px 32px -8px rgba(124,58,237,.55), 0 0 0 1px rgba(168,85,247,0.5) inset;
+    transition: transform .15s, box-shadow .2s, filter .2s;
+  }
+  .btn-violet:hover { filter: brightness(1.07); box-shadow: 0 1px 0 rgba(255,255,255,0.5) inset, 0 16px 36px -6px rgba(124,58,237,.7), 0 0 0 1px rgba(168,85,247,0.6) inset; }
+  .btn-violet:active { transform: translateY(1px) scale(.99); }
+
+  .btn-ghost {
+    border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; padding: 13px 22px; color: var(--ink);
+    background: rgba(255,255,255,0.02); transition: background .2s, border-color .2s;
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.3); }
+
+  /* Brand wordmark — SPACE-style cut letters via overlaying a dark slice */
+  .wordmark { font-family: 'Unbounded', sans-serif; font-weight: 400; letter-spacing: 0.32em; text-transform: uppercase; }
+
+  /* Marquee */
+  @keyframes marq { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+  .marquee-track { animation: marq 38s linear infinite; }
+
+  /* Scrollbar dim */
+  *::-webkit-scrollbar { width: 4px; height: 4px; }
+  *::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.3); border-radius: 4px; }
+
+  /* Disable tailwind overrides for body bg */
+  html, body { background: var(--bg-0) !important; }
+  #root { min-height: 100dvh; }
+
+  /* Marker pill */
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.03);
+    font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+  .pill .dot { width:6px; height:6px; border-radius: 999px; background: var(--violet-2); box-shadow: 0 0 12px var(--violet-2); animation: blip 2s ease-in-out infinite; }
+  @keyframes blip { 0%,100%{opacity:1; transform:scale(1)} 50%{opacity:.5; transform:scale(.7)} }
+
+  /* Selection */
+  ::selection { background: rgba(168,85,247,.45); color: #fff; }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script>
+  // EDITMODE defaults — kept here so the host can rewrite them
+  window.TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+    "accentHue": 268,
+    "blobStyle": "wave",
+    "cosmicIntensity": 1,
+    "showGrid": false
+  }/*EDITMODE-END*/;
+</script>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="cosmic-bg.jsx"></script>
+<script type="text/babel" src="aurora-flow.jsx"></script>
+<script type="text/babel" src="blob.jsx"></script>
+<script type="text/babel" src="hero-3d.jsx"></script>
+<script type="text/babel" src="voice-blob.jsx"></script>
+<script type="text/babel" src="ring-blob.jsx"></script>
+<script type="text/babel" src="wave-blob.jsx"></script>
+<script type="text/babel" src="home.jsx"></script>
+<script type="text/babel" src="auth.jsx"></script>
+<script type="text/babel" src="scenarios.jsx"></script>
+<script type="text/babel" src="chat.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+
+</body>
+</html>

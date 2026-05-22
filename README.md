@@ -1,197 +1,121 @@
-# Lingua Live
+# LinguaAI — AI Language Practice Platform
 
-An AI-powered language tutor that drops you into real-world roleplay scenarios and coaches you through them in real time. Pick a language, pick a level, describe the situation you want to practice — a café order, a hotel check-in, a job interview — and the AI generates a character, setting, and conversation entirely tailored to you.
+> Practice real conversations with an AI tutor. Speak or type. Get instant feedback. No judgment — just progress.
 
-Built as a multi-phase engineering project demonstrating a production-quality monorepo with WebSocket streaming, AI agents, and a typed full-stack TypeScript codebase.
+**Demo login:** `demo@lingua-ai.com` / `demo1234`
 
 ---
+
+## What It Does
+
+LinguaAI lets you practice speaking a foreign language with an AI tutor that:
+- Plays a realistic character (café barista, hotel receptionist, etc.)
+- Speaks back to you in the target language
+- Corrects your mistakes naturally without breaking the conversation
+- Gives you a detailed feedback report after each session
+- Remembers your weaknesses and adapts future sessions
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 14 (App Router), React 18, Tailwind CSS, TypeScript |
-| Backend | Hono on Bun runtime |
-| Database | PostgreSQL via Supabase, Drizzle ORM |
-| AI | Groq API — LLaMA 3.3 70B (chat), LLaMA 3.1 8B (scenario generation) |
-| Real-time | Native Bun WebSocket with SSE token streaming |
-| Monorepo | Turborepo with Bun workspaces |
-| Deployment | Vercel (web) + Railway (API) |
-
----
-
-## Features
-
-### Phase 1 — Foundation
-- **Auth** — JWT register/login, bcrypt password hashing, protected routes
-- **Sessions** — create, list, resume, and end practice sessions
-- **8 languages** — Spanish, French, German, Italian, Japanese, Mandarin, Portuguese, Arabic
-- **3 levels** — Beginner, Intermediate, Advanced
-- **AI chat** — multi-turn conversation with Groq LLaMA 3.3 70B
-- **Database** — Drizzle ORM with PostgreSQL enums for type-safe schema
-
-### Phase 2 — Real-time Streaming & AI Agents
-- **ScenarioAgent** — generates a unique AI persona (name, role, setting, system prompt, opening message) for every session request
-- **WebSocket streaming** — tokens stream word-by-word with a blinking cursor; no waiting for full responses
-- **Typed WS protocol** — `ClientMessage` / `ServerMessage` union types shared between client and server
-- **Optimistic UI** — user messages appear instantly before server confirmation
-- **Reconnect logic** — exponential backoff (up to 5 attempts), intentional-close guard prevents false error states
-- **History scoping** — AI context is scoped to the current connection's timestamp, preventing persona leakage across reconnects
-- **Session lifecycle** — active → completed / abandoned states tracked in DB with duration
-
----
-
-## Project Structure
-
-```
-lingua-live/
-├── apps/
-│   ├── api/                    # Hono + Bun backend
-│   │   └── src/
-│   │       ├── agents/         # AI agents (ScenarioAgent)
-│   │       ├── db/             # Drizzle schema, client, seed
-│   │       ├── lib/            # groq.ts, ws-session.ts, ws-types.ts, logger, errors
-│   │       ├── middleware/     # JWT auth middleware
-│   │       ├── routes/         # auth, sessions, chat REST routes
-│   │       └── index.ts        # Bun.serve — HTTP + WebSocket upgrade
-│   └── web/                    # Next.js 14 App Router frontend
-│       ├── app/
-│       │   ├── (auth)/         # login, register pages
-│       │   ├── dashboard/      # session list + new session form
-│       │   └── session/[id]/   # live chat page
-│       └── lib/
-│           ├── api.ts          # typed REST client
-│           └── use-chat-socket.ts  # WebSocket hook with streaming state
-└── packages/
-    └── tsconfig/               # shared TypeScript base config
-```
-
----
+| Layer     | Technology                        | Why                                              |
+|-----------|-----------------------------------|--------------------------------------------------|
+| Frontend  | Next.js 14 + TypeScript           | Industry standard, App Router                    |
+| Styling   | Tailwind CSS                      | Fast iteration, consistent design                |
+| Backend   | Hono on Bun                       | Fast, typed, lightweight                         |
+| Database  | PostgreSQL via Drizzle ORM        | Type-safe, SQL-close, real migrations            |
+| AI (LLM)  | Groq API — LLaMA 3.3 70B         | Free tier, ~500 tok/sec streaming                |
+| AI (STT)  | Groq Whisper API                  | Same API key, no self-hosting                    |
+| TTS       | Web Speech API (browser-native)   | Free, zero latency, language-aware               |
+| Auth      | JWT (jose) + bcrypt               | Simple, correct for this scale                   |
 
 ## Architecture
 
 ```
 Browser
   │
-  ├─ REST (HTTP)  ──►  Hono routes  ──►  Drizzle  ──►  PostgreSQL (Supabase)
-  │                         │
-  └─ WebSocket  ───────►  Bun.serve websocket handler
-                               │
-                           WSSession (per connection)
-                               ├─ start_session  ──►  ScenarioAgent  ──►  Groq LLaMA 3.1 8B
-                               └─ send_message   ──►  streamGroqResponse  ──►  Groq LLaMA 3.3 70B
-                                                          │
-                                                  SSE token stream
-                                                          │
-                                              { type: "token", token } ──► browser
+  ├── HTTP  → POST /sessions, GET /sessions, /auth/*
+  │
+  └── WebSocket → /ws
+        │
+        ├── start_session → ScenarioAgent (Groq) → persona + opening message
+        ├── send_message  → ConversationAgent (Groq stream) → token by token
+        ├── send_audio    → Whisper API → transcript → ConversationAgent
+        └── end_session   → FeedbackAgent (Groq) → scores + corrections
+                          → MemoryService → update weakness tags
 ```
 
-**WebSocket message protocol:**
+## Key Engineering Decisions
 
-| Client → Server | Server → Client |
-|----------------|-----------------|
-| `start_session` | `session_ready` (with scenario) |
-| `send_message` | `user_message_saved` |
-| `end_session` | `token` (streamed) |
-| `ping` | `message_done` |
-| | `session_ended` |
-| | `pong` |
-| | `error` |
+**Why HTTP for sessions, WebSocket for chat?**
+Sessions are request/response — HTTP is correct. Chat needs streaming which requires a persistent connection — WebSocket is correct. Using the right tool for each job.
 
----
+**Why Groq instead of OpenAI?**
+Free tier is more generous. Inference is ~8x faster (important for streaming). API is OpenAI-compatible so switching costs zero refactoring.
+
+**Why no agent framework (Mastra, LangChain)?**
+Plain TypeScript classes are readable, debuggable, and I can explain every line. Framework abstractions add dependency risk without benefit when you have 3 agents.
+
+**Why Web Speech API for TTS?**
+Browser-native, free, zero latency overhead, language-aware. ElevenLabs is a straightforward upgrade path when voice quality becomes a requirement.
 
 ## Local Setup
 
 ### Prerequisites
-- [Bun](https://bun.sh) >= 1.1
-- [Node.js](https://nodejs.org) >= 20 (for Next.js)
-- PostgreSQL database (e.g. free [Supabase](https://supabase.com) project)
-- [Groq API key](https://console.groq.com) (free tier available)
+- [Bun](https://bun.sh) v1.0+
+- [Supabase](https://supabase.com) account (free)
+- [Groq](https://console.groq.com) API key (free)
 
-### 1. Clone and install
+### Steps
 
 ```bash
-git clone https://github.com/iraj259/lingua-live.git
-cd lingua-live
+git clone https://github.com/yourusername/lingua-ai
+cd lingua-ai
 bun install
+
+# Backend env
+cp apps/api/.env.example apps/api/.env
+# Fill in DATABASE_URL, GROQ_API_KEY, JWT_SECRET
+
+# Frontend env
+echo "NEXT_PUBLIC_API_URL=http://localhost:3001" > apps/web/.env.local
+
+# Push schema
+cd apps/api && bun run db:push
+
+# Seed demo data
+bun run db:seed
+
+# Start both servers
+cd ../.. && bun run dev
 ```
 
-### 2. Environment variables
+Frontend: http://localhost:3000
+Backend:  http://localhost:3001/health
 
-**`apps/api/.env`**
-```env
-DATABASE_URL=postgresql://...        # Supabase connection string
-GROQ_API_KEY=gsk_...                 # Groq API key
-JWT_SECRET=your-secret-here          # any long random string
-FRONTEND_URL=http://localhost:3000
-PORT=3001
+## Project Structure
+
+```
+lingua-ai/
+├── apps/
+│   ├── api/                    Hono + Bun backend
+│   │   └── src/
+│   │       ├── agents/         ScenarioAgent, FeedbackAgent
+│   │       ├── services/       MemoryService
+│   │       ├── routes/         auth, sessions, feedback
+│   │       ├── lib/            groq, stt, ws-session, ws-types
+│   │       └── db/             schema, client, seed
+│   │
+│   └── web/                    Next.js frontend
+│       ├── app/                Pages (App Router)
+│       └── lib/                api, auth-context, hooks, utils
+│
+└── README.md
 ```
 
-**`apps/web/.env.local`**
-```env
-NEXT_PUBLIC_API_URL=http://localhost:3001
-```
+## Phases Built
 
-### 3. Push the database schema
-
-```bash
-cd apps/api
-bun run db:push
-```
-
-### 4. Run both apps
-
-```bash
-# From project root
-bun run dev
-```
-
-- API: http://localhost:3001
-- Web: http://localhost:3000
-
----
-
-## Roadmap
-
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 1 | Done | Auth, sessions, REST chat with Groq |
-| 2 | Done | WebSocket streaming, ScenarioAgent, optimistic UI |
-| 3 | Planned | FeedbackAgent — real-time grammar correction per message |
-| 4 | Planned | VoiceAgent — Whisper STT + TTS for spoken practice |
-| 5 | Planned | ProgressAgent — tracks vocabulary and grammar patterns over time |
-| 6 | Planned | Multi-agent orchestration with BaseAgent, shared message bus |
-| 7 | Planned | Analytics dashboard, streak tracking, spaced repetition |
-| 8 | Planned | Mobile app (React Native), offline mode |
-| 9 | Planned | Production hardening — rate limiting, abuse detection, observability |
-
----
-
-## API Reference
-
-### Auth
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/auth/register` | Create account |
-| POST | `/auth/login` | Get JWT token |
-| GET | `/auth/me` | Current user |
-
-### Sessions
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/sessions` | Create session |
-| GET | `/sessions` | List sessions (paginated) |
-| GET | `/sessions/:id` | Get session + messages |
-| PATCH | `/sessions/:id` | Update title |
-| DELETE | `/sessions/:id` | Delete session |
-
-### WebSocket
-```
-ws://localhost:3001/ws?token=<jwt>&sessionId=<uuid>
-```
-
----
-
-## License
-
-MIT
+- **Phase 1** — Auth, sessions, REST chat with Groq
+- **Phase 2** — WebSocket streaming, ScenarioAgent, optimistic UI
+- **Phase 3** — Voice input (Whisper STT) + TTS output
+- **Phase 4** — Feedback scores, memory system, adaptive AI
+- **Phase 5** — Polish, demo account, documentation

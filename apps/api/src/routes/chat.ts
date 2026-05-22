@@ -91,3 +91,81 @@ chatRouter.post(
     return c.json({ userMessage: savedUserMessage, aiMessage: savedAiMessage });
   }
 );
+
+// ── Suggest replies ────────────────────────────────────────────────────────
+const suggestSchema = z.object({
+  aiMessage: z.string().min(1).max(2000),
+  language:  z.string(),
+  level:     z.string(),
+});
+
+chatRouter.post(
+  "/suggest",
+  zValidator("json", suggestSchema, (result, c) => {
+    if (!result.success) {
+      return c.json({ error: "Invalid request", code: "VALIDATION_ERROR" }, 422);
+    }
+    return undefined;
+  }),
+  async (c) => {
+    const { aiMessage, language, level } = c.req.valid("json");
+
+    const raw = await generateResponse([
+      {
+        role: "system",
+        content: `You are helping a ${level} ${language} learner practice conversation.
+Given the tutor's message, suggest 3 short, natural replies the learner could say.
+Return ONLY a JSON array with exactly 3 objects, no markdown, no extra text:
+[{"reply":"<reply in ${language}>","english":"<brief English meaning, max 8 words>"}]
+Replies must be appropriate for a ${level} learner — keep them short and realistic.`,
+      },
+      { role: "user", content: aiMessage },
+    ], {
+      model: "llama-3.1-8b-instant",
+      temperature: 0.7,
+      maxTokens: 300,
+    });
+
+    try {
+      const jsonMatch = raw.match(/\[[\s\S]*\]/);
+      const suggestions = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+      return c.json({ suggestions });
+    } catch {
+      return c.json({ suggestions: [] });
+    }
+  }
+);
+
+// ── Translate a message to English ────────────────────────────────────────
+const translateSchema = z.object({
+  text:         z.string().min(1).max(2000),
+  fromLanguage: z.string(),
+});
+
+chatRouter.post(
+  "/translate",
+  zValidator("json", translateSchema, (result, c) => {
+    if (!result.success) {
+      return c.json({ error: "Invalid request", code: "VALIDATION_ERROR" }, 422);
+    }
+    return undefined;
+  }),
+  async (c) => {
+    const { text, fromLanguage } = c.req.valid("json");
+
+    const translation = await generateResponse([
+      {
+        role: "system",
+        content: `You are a translator. Translate the following ${fromLanguage} text to English.
+Return ONLY the English translation — no explanations, no original text, no quotes.`,
+      },
+      { role: "user", content: text },
+    ], {
+      model: "llama-3.1-8b-instant",
+      temperature: 0.1,
+      maxTokens: 300,
+    });
+
+    return c.json({ translation: translation.trim() });
+  }
+);

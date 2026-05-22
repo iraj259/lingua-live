@@ -74,6 +74,12 @@ export const sessionsApi = {
 export const chatApi = {
   send: (sessionId: string, message: string) =>
     request<{ userMessage: Message; aiMessage: Message }>("/chat", { method: "POST", body: { sessionId, message } }),
+  translate: (text: string, fromLanguage: string) =>
+    request<{ translation: string }>("/chat/translate", { method: "POST", body: { text, fromLanguage } }),
+  suggest: (aiMessage: string, language: string, level: string) =>
+    request<{ suggestions: { reply: string; english: string }[] }>("/chat/suggest", {
+      method: "POST", body: { aiMessage, language, level },
+    }),
 };
 
 export interface Correction {

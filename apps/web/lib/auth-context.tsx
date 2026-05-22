@@ -12,6 +12,20 @@ interface AuthCtx {
 
 const AuthContext = createContext<AuthCtx | null>(null);
 
+function jwtExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]!));
+    return typeof payload.exp === "number" && payload.exp * 1000 < Date.now();
+  } catch {
+    return true;
+  }
+}
+
+function clearAuth() {
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser]           = useState<User | null>(null);
@@ -19,24 +33,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function init() {
-      const token = localStorage.getItem("token");
+      const token  = localStorage.getItem("token");
       const stored = localStorage.getItem("user");
 
       if (!token) { setIsLoading(false); return; }
+
+      // Reject expired tokens immediately — no API call needed
+      if (jwtExpired(token)) {
+        clearAuth();
+        setIsLoading(false);
+        return;
+      }
 
       // Optimistically restore from localStorage (instant UI)
       if (stored) {
         try { setUser(JSON.parse(stored) as User); } catch { /* ignore */ }
       }
 
-      // Validate with API in background
+      // Validate with server to catch revoked / tampered tokens
       try {
         const { user: validated } = await authApi.me();
         setUser(validated);
         localStorage.setItem("user", JSON.stringify(validated));
       } catch {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
+        clearAuth();
         setUser(null);
       } finally {
         setIsLoading(false);
@@ -52,8 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    clearAuth();
     setUser(null);
     router.push("/login");
   }, [router]);
