@@ -155,9 +155,9 @@ export default function DashboardPage() {
         <main style={{ maxWidth: 768, margin: "0 auto", padding: "32px 24px" }}>
 
           {/* Welcome */}
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 32 }}>
-            <div>
-              <h1 className="font-display text-white" style={{ fontSize: 28, fontWeight: 400, letterSpacing: "-0.01em" }}>
+          <div className="flex items-start justify-between gap-3" style={{ marginBottom: 32 }}>
+            <div style={{ minWidth: 0 }}>
+              <h1 className="font-display text-white" style={{ fontSize: "clamp(22px, 6vw, 28px)", fontWeight: 400, letterSpacing: "-0.01em" }}>
                 Hey, {user.displayName.split(" ")[0]} 👋
               </h1>
               <p style={{ fontSize: 13, color: "var(--ink-dim)", marginTop: 4 }}>
@@ -166,15 +166,14 @@ export default function DashboardPage() {
                   : `${sessions.length} practice session${sessions.length === 1 ? "" : "s"} total.`}
               </p>
             </div>
-            <Link href="/session/new" className="btn-violet" style={{ padding: "12px 20px", fontSize: 13 }}>
-              <Plus size={15} /> New session
+            <Link href="/session/new" className="btn-violet" style={{ padding: "10px 16px", fontSize: 12, flexShrink: 0 }}>
+              <Plus size={14} /> New
             </Link>
           </div>
 
           {/* Stats */}
           {sessions.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 20 }}
-                 className="sm:grid-cols-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4" style={{ gap: 12, marginBottom: 20 }}>
               <StatCard icon={MessageSquare} label="Sessions"      value={sessions.length} />
               <StatCard icon={Clock}         label="Min practiced" value={totalMins} />
               <StatCard icon={Globe}         label="Languages"     value={uniqueLangs} />

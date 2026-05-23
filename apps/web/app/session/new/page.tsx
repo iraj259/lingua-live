@@ -139,7 +139,7 @@ export default function NewSessionPage() {
 
           {/* Step 1 — Language */}
           <Step n="01" title="Pick a language">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }} className="md:grid-cols-4">
+            <div className="grid grid-cols-2 md:grid-cols-4" style={{ gap: 10 }}>
               {langs.map(([key, cfg]) => (
                 <SelectCard key={key} selected={language === key} onClick={() => setLanguage(key)}>
                   <div style={{ fontSize: 30 }}>{cfg.flag}</div>
@@ -152,7 +152,7 @@ export default function NewSessionPage() {
 
           {/* Step 2 — Level */}
           <Step n="02" title="Choose your level">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(1, 1fr)", gap: 10 }} className="md:grid-cols-3">
+            <div className="grid grid-cols-1 md:grid-cols-3" style={{ gap: 10 }}>
               {LEVELS.map(l => (
                 <SelectCard key={l.id} selected={level === l.id} onClick={() => setLevel(l.id)} pad>
                   <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
@@ -167,7 +167,7 @@ export default function NewSessionPage() {
 
           {/* Step 3 — Scenario */}
           <Step n="03" title="Pick a scenario">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }} className="md:grid-cols-4">
+            <div className="grid grid-cols-2 md:grid-cols-4" style={{ gap: 10 }}>
               {SCENARIOS.map(s => (
                 <SelectCard key={s.id} selected={scenarioId === s.id} onClick={() => { setScenarioId(s.id); setCustom(""); }} pad>
                   <div style={{ fontSize: 24 }}>{s.icon}</div>
@@ -193,10 +193,10 @@ export default function NewSessionPage() {
           </Step>
 
           {/* Summary + start */}
-          <div className="glass" style={{ borderRadius: 24, padding: 24, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 18 }}>
-            <div style={{ flex: 1, minWidth: 220 }}>
+          <div className="glass flex flex-col sm:flex-row sm:items-center flex-wrap gap-4" style={{ borderRadius: 24, padding: 24 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div className="step-badge mb-2">YOUR SESSION</div>
-              <div style={{ fontSize: 16, color: "#fff", lineHeight: 1.4 }}>
+              <div style={{ fontSize: 15, color: "#fff", lineHeight: 1.4 }}>
                 {scenarioTitle}{" "}
                 <span style={{ color: "var(--ink-dim)" }}>·</span>{" "}
                 <span>{selectedLang?.flag} {selectedLang?.label}</span>{" "}
@@ -207,7 +207,7 @@ export default function NewSessionPage() {
             <button
               onClick={handleStart}
               disabled={creating || !canStart}
-              className="btn-violet"
+              className="btn-violet w-full sm:w-auto"
               style={{ padding: "16px 26px", fontSize: 14, opacity: (creating || !canStart) ? 0.5 : 1 }}
             >
               {creating

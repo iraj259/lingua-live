@@ -383,7 +383,7 @@ function SessionContent({ params }: { params: { id: string } }) {
           background: "rgba(5,2,8,0.65)",
           flexShrink: 0,
         }}>
-          <div style={{ maxWidth: 768, margin: "0 auto", padding: "12px 20px", display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ maxWidth: 768, margin: "0 auto", padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
             <Link href="/dashboard" style={{
               display: "grid", placeItems: "center", width: 36, height: 36, borderRadius: 10,
               background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)",
@@ -452,9 +452,9 @@ function SessionContent({ params }: { params: { id: string } }) {
               onClick={endSession}
               disabled={connectionState !== "ready"}
               className="btn-ghost"
-              style={{ padding: "8px 14px", fontSize: 12, flexShrink: 0, opacity: connectionState !== "ready" ? 0.4 : 1 }}
+              style={{ padding: "7px 12px", fontSize: 11, flexShrink: 0, opacity: connectionState !== "ready" ? 0.4 : 1 }}
             >
-              <StopCircle size={13} /> End
+              <StopCircle size={12} /> End
             </button>
           </div>
 
@@ -573,8 +573,8 @@ function SessionContent({ params }: { params: { id: string } }) {
               </div>
             )}
             <style>{`@keyframes slideUpFade { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }`}</style>
-            <div style={{ maxWidth: 720, margin: "0 auto", padding: "14px 20px" }}>
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+            <div style={{ maxWidth: 720, margin: "0 auto", padding: "10px 12px" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
 
                 <textarea
                   ref={inputRef}
@@ -642,7 +642,7 @@ function SessionContent({ params }: { params: { id: string } }) {
                   ? "Release to send"
                   : hasPermission === false
                   ? "Microphone access denied — text only"
-                  : "Enter to send · Shift+Enter for new line · Hold 🎤 to speak · Click translate on AI messages"
+                  : <><span className="hidden sm:inline">Enter to send · Shift+Enter for new line · </span>Hold 🎤 to speak</>
                 }
               </p>
             </div>

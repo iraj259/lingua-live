@@ -108,22 +108,22 @@ export default function SummaryPage({ params }: { params: { id: string } }) {
           backdropFilter: "blur(20px)", background: "rgba(5,2,8,0.6)",
           position: "sticky", top: 0, zIndex: 10,
         }}>
-          <div style={{ maxWidth: 768, margin: "0 auto", padding: "14px 24px", display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ maxWidth: 768, margin: "0 auto", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
             <Link href="/dashboard" style={{
               display: "grid", placeItems: "center", width: 36, height: 36, borderRadius: 10,
               background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)",
-              color: "var(--ink-dim)", textDecoration: "none",
+              color: "var(--ink-dim)", textDecoration: "none", flexShrink: 0,
             }}>
               <ArrowLeft size={16} />
             </Link>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <h1 style={{ fontSize: 14, fontWeight: 500, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <h1 style={{ fontSize: 13, fontWeight: 500, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {session.title ?? `${lang?.label} session`}
               </h1>
               <p style={{ fontSize: 11, color: "var(--ink-mute)", marginTop: 1 }}>{formatDate(session.startedAt)}</p>
             </div>
-            <Link href="/session/new" className="btn-violet" style={{ padding: "10px 18px", fontSize: 12 }}>
-              <Plus size={14} /> New session
+            <Link href="/session/new" className="btn-violet" style={{ padding: "8px 14px", fontSize: 11, flexShrink: 0 }}>
+              <Plus size={13} /> <span className="hidden sm:inline">New session</span><span className="sm:hidden">New</span>
             </Link>
           </div>
         </header>
@@ -149,7 +149,7 @@ export default function SummaryPage({ params }: { params: { id: string } }) {
           )}
 
           {/* Stats row */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 24 }}>
+          <div className="grid grid-cols-3" style={{ gap: 10, marginBottom: 24 }}>
             {[
               { value: lang?.flag ?? "🌐", label: lang?.label ?? session.language },
               { value: userMsgCount,       label: "Messages sent" },
@@ -295,7 +295,7 @@ export default function SummaryPage({ params }: { params: { id: string } }) {
           </div>
 
           {/* Actions */}
-          <div style={{ display: "flex", gap: 12, justifyContent: "center", paddingTop: 32, paddingBottom: 16 }}>
+          <div className="flex flex-col sm:flex-row justify-center gap-3" style={{ paddingTop: 32, paddingBottom: 16 }}>
             <Link href="/session/new" className="btn-violet" style={{ padding: "14px 22px", fontSize: 13 }}>
               <Plus size={14} /> Practice again
             </Link>

@@ -32,22 +32,22 @@ export default function LandingPage() {
       <div style={{ position: "relative", zIndex: 2 }}>
 
         {/* ── Nav ──────────────────────────────────────────────────────── */}
-        <nav className="flex items-center justify-between px-8 lg:px-16 py-6">
+        <nav className="flex items-center justify-between px-4 sm:px-8 lg:px-16 py-5">
           <Wordmark />
           <div className="hidden md:flex items-center gap-9 text-[13px]" style={{ color: "var(--ink-dim)" }}>
             <a className="hover:text-white transition-colors" href="#how">How it works</a>
             <a className="hover:text-white transition-colors" href="#languages">Languages</a>
           </div>
-          <div className="flex items-center gap-2">
-            <Link href="/login" className="btn-ghost text-[13px]" style={{ padding: "10px 18px" }}>Sign in</Link>
-            <Link href="/register" className="btn-violet text-[13px]" style={{ padding: "10px 18px" }}>Get started</Link>
+          <div className="flex items-center gap-1.5">
+            <Link href="/login" className="btn-ghost text-[12px] sm:text-[13px]" style={{ padding: "8px 12px" }}>Sign in</Link>
+            <Link href="/register" className="btn-violet text-[12px] sm:text-[13px]" style={{ padding: "8px 12px" }}>Get started</Link>
           </div>
         </nav>
 
         {/* ── Hero ─────────────────────────────────────────────────────── */}
-        <section className="px-6 lg:px-16 pt-20 lg:pt-28 pb-32 text-center">
+        <section className="px-6 lg:px-16 pt-14 lg:pt-28 pb-20 lg:pb-32 text-center">
           <div className="max-w-5xl mx-auto">
-            <span className="pill mb-10 inline-flex">
+            <span className="pill mb-6 lg:mb-10 inline-flex">
               <span className="dot" />
               <span>Live AI voice tutor · Now open</span>
             </span>
@@ -109,9 +109,9 @@ export default function LandingPage() {
         </section>
 
         {/* ── How it works ──────────────────────────────────────────────── */}
-        <section id="how" className="px-6 lg:px-16 py-32">
+        <section id="how" className="px-6 lg:px-16 py-16 lg:py-32">
           <div className="max-w-6xl mx-auto">
-            <div className="flex items-end justify-between flex-wrap gap-6 mb-16">
+            <div className="flex items-end justify-between flex-wrap gap-6 mb-8 lg:mb-16">
               <div>
                 <span className="pill mb-5 inline-flex"><span>Three steps</span></span>
                 <h2 className="font-display text-white max-w-xl" style={{ fontSize: "clamp(36px, 5vw, 68px)", fontWeight: 300, lineHeight: 1.02, letterSpacing: "-0.02em" }}>
@@ -143,7 +143,7 @@ export default function LandingPage() {
         </section>
 
         {/* ── Language grid ─────────────────────────────────────────────── */}
-        <section className="px-6 lg:px-16 py-24">
+        <section className="px-6 lg:px-16 py-12 lg:py-24">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-14">
               <span className="pill mb-5 inline-flex"><span>Eight languages</span></span>
@@ -167,7 +167,7 @@ export default function LandingPage() {
         </section>
 
         {/* ── CTA ───────────────────────────────────────────────────────── */}
-        <section className="px-6 lg:px-16 py-32 text-center">
+        <section className="px-6 lg:px-16 py-16 lg:py-32 text-center">
           <div className="max-w-3xl mx-auto">
             <h2 className="font-display text-white" style={{ fontSize: "clamp(40px, 7vw, 96px)", fontWeight: 300, lineHeight: 0.98, letterSpacing: "-0.02em" }}>
               Your <span className="font-serif-i" style={{ color: "#c084fc" }}>first</span> conversation
