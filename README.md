@@ -1,8 +1,15 @@
+
 # LinguaAI — AI Language Practice Platform
 
 > Practice real conversations with an AI tutor. Speak or type. Get instant feedback. No judgment — just progress.
 
 **Demo login:** `demo@lingua-ai.com` / `demo1234`
+
+---
+
+## System Design
+
+![LinguaAI — System Architecture](apps/web/lingua.png)
 
 ---
 
