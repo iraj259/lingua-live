@@ -9,7 +9,7 @@
 
 ## System Design
 
-![LinguaAI — System Architecture](apps/web/lingua.png)
+![LinguaAI — System Architecture](lingua.png)
 
 ---
 
